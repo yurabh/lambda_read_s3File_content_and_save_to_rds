@@ -1,4 +1,4 @@
-package com.lambda;
+package com.example;
 
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 
@@ -7,7 +7,7 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.utils.LambdaUtils;
+import com.example.utils.LambdaUtils;
 
 public class S3EventHandler implements RequestHandler<S3EventNotification, Boolean> {
     private static final AmazonS3 amazonS3 = AmazonS3ClientBuilder
