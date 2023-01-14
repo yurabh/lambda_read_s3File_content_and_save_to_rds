@@ -1,20 +1,22 @@
 package com.example.model;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 public class PhoneNumber {
-    public PhoneNumber() {
-    }
+    private final List<Integer> phoneNumbers;
 
-    private List<Integer> phoneNumbers;
+    public PhoneNumber() {
+        phoneNumbers = new ArrayList<>();
+    }
 
     public List<Integer> getPhoneNumbers() {
         return phoneNumbers;
     }
 
-    public void setPhoneNumbers(List<Integer> phoneNumbers) {
-        this.phoneNumbers = phoneNumbers;
+    public void addNumber(Integer phoneNumber) {
+        phoneNumbers.add(phoneNumber);
     }
 
     @Override
