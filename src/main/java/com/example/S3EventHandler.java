@@ -5,28 +5,70 @@ import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
+import com.amazonaws.services.rds.AmazonRDS;
+import com.amazonaws.services.rds.AmazonRDSClientBuilder;
+import com.amazonaws.services.rds.model.CreateDBInstanceRequest;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
+import com.amazonaws.services.sqs.AmazonSQS;
+import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
+import com.amazonaws.services.sqs.model.GetQueueUrlResult;
 import com.example.model.PhoneNumber;
-import com.example.utils.LambdaUtils;
+
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Objects;
 
+import static com.example.utils.LambdaUtils.CREDENTIALS;
+import static com.example.utils.LambdaUtils.DB_INSTANCE_IDENTIFIER;
+import static com.example.utils.LambdaUtils.DB_NAME;
+import static com.example.utils.LambdaUtils.ENGINE;
+import static com.example.utils.LambdaUtils.INSTANCE_CLASS;
+import static com.example.utils.LambdaUtils.PASSWORD;
+import static com.example.utils.LambdaUtils.RDS_URL;
+import static com.example.utils.LambdaUtils.REGION;
+import static com.example.utils.LambdaUtils.STORAGE_TYPE;
+import static com.example.utils.LambdaUtils.USER_NAME;
+
 public class S3EventHandler implements RequestHandler<S3EventNotification, Boolean> {
+    private static final Logger LOGGER = LogManager.getLogger(S3EventHandler.class);
     private static final AmazonS3 amazonS3 = AmazonS3ClientBuilder
             .standard()
-            .withCredentials(new AWSStaticCredentialsProvider(LambdaUtils.CREDENTIALS))
-            .withRegion(LambdaUtils.REGION)
+            .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
+            .withRegion(REGION)
             .build();
+    private static final AmazonRDS amazonRDS = AmazonRDSClientBuilder
+            .standard()
+            .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
+            .withRegion(REGION).build();
+    private static final AmazonSQS amazonSQS = AmazonSQSClientBuilder
+            .standard()
+            .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
+            .withRegion(REGION)
+            .build();
+    private static final String LINE_SEPARATOR = "|";
+    private static final String MESSAGE_BODY = "phones saved";
+    private static final String QUEUE = "phone-number-queue";
+    private static final String CREATE_TABLE = "CREATE TABLE IF NOT EXISTS phone_numbers (id SERIAL PRIMARY KEY, numbers INT(15))";
+    private static final String INSERT_INTO_TABLE = "INSERT INTO phone_numbers (numbers) VALUES (?)";
 
     public Boolean handleRequest(S3EventNotification s3EventNotification, Context context) {
         if (s3EventNotification.getRecords().isEmpty()) {
+            LOGGER.info("Finish processing function so seEvent is empty: {}", s3EventNotification.getRecords().size());
             return false;
         }
         S3EventNotification.S3EventNotificationRecord eventNotificationRecord = s3EventNotification.getRecords().get(0);
@@ -38,13 +80,22 @@ public class S3EventHandler implements RequestHandler<S3EventNotification, Boole
                 S3ObjectInputStream objectContent = s3Object.getObjectContent();
                 try (final BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(objectContent, StandardCharsets.UTF_8))) {
                     PhoneNumber phoneNumbers = getPhoneNumbers(bufferedReader);
-                    return true;
+                    if (Objects.nonNull(phoneNumbers)) {
+                        createDbInstance();
+                        createTableInDbRds();
+                        insertPhoneNumbersInDbRds(phoneNumbers);
+                        createQueue();
+                        sendMessageToTheQueue();
+                        return true;
+                    }
                 } catch (IOException ex) {
-
+                    LOGGER.error("Failed read content from file: {}", ex.getMessage());
                     return false;
                 }
             }
+            LOGGER.info("S3 Object is null");
         }
+        LOGGER.info("EventNotificationRecord is null");
         return false;
     }
 
@@ -60,18 +111,76 @@ public class S3EventHandler implements RequestHandler<S3EventNotification, Boole
         return eventNotificationRecord.getS3().getObject().getKey();
     }
 
+    private static void createQueue() {
+        LOGGER.info("Create queue");
+        amazonSQS.createQueue(QUEUE);
+    }
+
+    private static void sendMessageToTheQueue() {
+        GetQueueUrlResult queueUrl = amazonSQS.getQueueUrl(QUEUE);
+        LOGGER.info("Try to send message to the queue: {}", queueUrl.getQueueUrl());
+        amazonSQS.sendMessage(queueUrl.getQueueUrl(), MESSAGE_BODY);
+        LOGGER.info("Message sent to the queue: {}", queueUrl.getQueueUrl());
+    }
+
+    private static void createTableInDbRds() {
+        try (Connection connection = DriverManager.getConnection(RDS_URL, USER_NAME, PASSWORD);
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(CREATE_TABLE);
+            LOGGER.info("Created table in db");
+        } catch (SQLException e) {
+            LOGGER.error("Cannot connect do db or create table statement: {}", e.getMessage());
+        }
+    }
+
+    private static void insertPhoneNumbersInDbRds(PhoneNumber phoneNumbers) {
+        try (Connection connection = DriverManager.getConnection(RDS_URL, USER_NAME, PASSWORD);
+             PreparedStatement preparedStatement = connection.prepareStatement(INSERT_INTO_TABLE)) {
+            for (int i = 0; i < phoneNumbers.getPhoneNumbers().size(); i++) {
+                preparedStatement.setInt(1, phoneNumbers.getPhoneNumbers().get(i));
+                preparedStatement.executeUpdate();
+            }
+            LOGGER.info("Phone numbers were inserted into db");
+        } catch (SQLException e) {
+            LOGGER.error("Cannot insert phone number in mySql database: {}", e.getMessage());
+        }
+    }
+
+    public static void createDbInstance() {
+        LOGGER.info("Form db Instance");
+        CreateDBInstanceRequest request = new CreateDBInstanceRequest();
+        request.setDBInstanceIdentifier(DB_INSTANCE_IDENTIFIER);
+        request.setDBInstanceClass(INSTANCE_CLASS);
+        request.setEngine(ENGINE);
+        request.setMultiAZ(false);
+        request.setMasterUsername(USER_NAME);
+        request.setMasterUserPassword(PASSWORD);
+        request.setDBName(DB_NAME);
+        request.setStorageType(STORAGE_TYPE);
+        request.setAllocatedStorage(10);
+        try {
+            amazonRDS.createDBInstance(request);
+            LOGGER.info("Db Instance were created");
+        } catch (Exception e) {
+            LOGGER.error("Db instance already exists: {}", request.getDBName());
+        }
+    }
+
     private static PhoneNumber getPhoneNumbers(BufferedReader bufferedReader) {
         PhoneNumber phoneNumbers = new PhoneNumber();
+        LOGGER.info("Start parsing file received from s3 bucket");
         try {
             while (bufferedReader.read() != -1) {
                 String line = bufferedReader.readLine();
-                if (line.contains("|")) {
+                if (line.contains(LINE_SEPARATOR)) {
                     StringBuilder parsingPhoneNumber = new StringBuilder(line);
                     parsingPhoneNumber.deleteCharAt(parsingPhoneNumber.length() - 1);
                     phoneNumbers.addNumber(Integer.parseInt(parsingPhoneNumber.toString()));
                 }
             }
+            LOGGER.info("Finish parsing file received from s3 bucket");
         } catch (IOException | NumberFormatException e) {
+            LOGGER.error("Failed parsing file received from s3 bucket: {}", e.getMessage());
             return null;
         }
         return phoneNumbers;
