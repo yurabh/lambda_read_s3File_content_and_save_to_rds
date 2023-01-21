@@ -1,7 +1,10 @@
 package com.example;
 
+import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
@@ -18,6 +21,7 @@ import com.amazonaws.services.sqs.model.GetQueueUrlResult;
 import com.example.model.PhoneNumber;
 
 
+import com.example.settings.Settings;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -33,37 +37,38 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Objects;
 
-import static com.example.utils.LambdaUtils.CREDENTIALS;
-import static com.example.utils.LambdaUtils.DB_INSTANCE_IDENTIFIER;
-import static com.example.utils.LambdaUtils.DB_NAME;
-import static com.example.utils.LambdaUtils.ENGINE;
-import static com.example.utils.LambdaUtils.INSTANCE_CLASS;
-import static com.example.utils.LambdaUtils.PASSWORD;
-import static com.example.utils.LambdaUtils.RDS_URL;
-import static com.example.utils.LambdaUtils.REGION;
-import static com.example.utils.LambdaUtils.STORAGE_TYPE;
-import static com.example.utils.LambdaUtils.USER_NAME;
-
 public class S3EventHandler implements RequestHandler<S3EventNotification, Boolean> {
+
     private static final Logger LOGGER = LogManager.getLogger(S3EventHandler.class);
+
+    private static final AWSCredentials CREDENTIALS = new BasicAWSCredentials(Settings.getAccessKey(), Settings.getSecretKey());
+
     private static final AmazonS3 amazonS3 = AmazonS3ClientBuilder
             .standard()
             .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
-            .withRegion(REGION)
+            .withRegion(Regions.US_EAST_1)
             .build();
+
     private static final AmazonRDS amazonRDS = AmazonRDSClientBuilder
             .standard()
             .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
-            .withRegion(REGION).build();
+            .withRegion(Regions.US_EAST_1)
+            .build();
+
     private static final AmazonSQS amazonSQS = AmazonSQSClientBuilder
             .standard()
             .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
-            .withRegion(REGION)
+            .withRegion(Regions.US_EAST_1)
             .build();
+
     private static final String LINE_SEPARATOR = "|";
+
     private static final String MESSAGE_BODY = "phones saved";
+
     private static final String QUEUE = "phone-number-queue";
+
     private static final String CREATE_TABLE = "CREATE TABLE IF NOT EXISTS phone_numbers (id SERIAL PRIMARY KEY, numbers INT(15))";
+
     private static final String INSERT_INTO_TABLE = "INSERT INTO phone_numbers (numbers) VALUES (?)";
 
     public Boolean handleRequest(S3EventNotification s3EventNotification, Context context) {
@@ -124,7 +129,7 @@ public class S3EventHandler implements RequestHandler<S3EventNotification, Boole
     }
 
     private static void createTableInDbRds() {
-        try (Connection connection = DriverManager.getConnection(RDS_URL, USER_NAME, PASSWORD);
+        try (Connection connection = DriverManager.getConnection(Settings.getRdsUrl(), Settings.getUserName(), Settings.getPassword());
              Statement statement = connection.createStatement()) {
             statement.executeUpdate(CREATE_TABLE);
             LOGGER.info("Created table in db");
@@ -134,7 +139,7 @@ public class S3EventHandler implements RequestHandler<S3EventNotification, Boole
     }
 
     private static void insertPhoneNumbersInDbRds(PhoneNumber phoneNumbers) {
-        try (Connection connection = DriverManager.getConnection(RDS_URL, USER_NAME, PASSWORD);
+        try (Connection connection = DriverManager.getConnection(Settings.getRdsUrl(), Settings.getUserName(), Settings.getPassword());
              PreparedStatement preparedStatement = connection.prepareStatement(INSERT_INTO_TABLE)) {
             for (int i = 0; i < phoneNumbers.getPhoneNumbers().size(); i++) {
                 preparedStatement.setInt(1, phoneNumbers.getPhoneNumbers().get(i));
@@ -149,14 +154,14 @@ public class S3EventHandler implements RequestHandler<S3EventNotification, Boole
     public static void createDbInstance() {
         LOGGER.info("Form db Instance");
         CreateDBInstanceRequest request = new CreateDBInstanceRequest();
-        request.setDBInstanceIdentifier(DB_INSTANCE_IDENTIFIER);
-        request.setDBInstanceClass(INSTANCE_CLASS);
-        request.setEngine(ENGINE);
+        request.setDBInstanceIdentifier(Settings.getDbInstanceIdentifier());
+        request.setDBInstanceClass(Settings.getInstanceClass());
+        request.setEngine(Settings.getEngine());
         request.setMultiAZ(false);
-        request.setMasterUsername(USER_NAME);
-        request.setMasterUserPassword(PASSWORD);
-        request.setDBName(DB_NAME);
-        request.setStorageType(STORAGE_TYPE);
+        request.setMasterUsername(Settings.getUserName());
+        request.setMasterUserPassword(Settings.getPassword());
+        request.setDBName(Settings.getDbName());
+        request.setStorageType(Settings.getStorageType());
         request.setAllocatedStorage(10);
         try {
             amazonRDS.createDBInstance(request);
