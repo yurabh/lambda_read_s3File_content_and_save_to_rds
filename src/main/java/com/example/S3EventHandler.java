@@ -36,37 +36,27 @@ import java.sql.Statement;
 import java.util.Objects;
 
 public class S3EventHandler implements RequestHandler<S3EventNotification, Boolean> {
-
     private static final Logger LOGGER = LogManager.getLogger(S3EventHandler.class);
-
     private static final AWSCredentials CREDENTIALS = new BasicAWSCredentials(Settings.getAccessKey(), Settings.getSecretKey());
-
     private static final AmazonS3 amazonS3 = AmazonS3ClientBuilder
             .standard()
             .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
             .withRegion(Regions.US_EAST_1)
             .build();
-
     private static final AmazonRDS amazonRDS = AmazonRDSClientBuilder
             .standard()
             .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
             .withRegion(Regions.US_EAST_1)
             .build();
-
     private static final AmazonSQS amazonSQS = AmazonSQSClientBuilder
             .standard()
             .withCredentials(new AWSStaticCredentialsProvider(CREDENTIALS))
             .withRegion(Regions.US_EAST_1)
             .build();
-
     private static final String LINE_SEPARATOR = "|";
-
     private static final String MESSAGE_BODY = "phones saved";
-
     private static final String QUEUE = "phone-number-queue";
-
     private static final String CREATE_TABLE = "CREATE TABLE IF NOT EXISTS phone_numbers (id SERIAL PRIMARY KEY, numbers INT(15))";
-
     private static final String INSERT_INTO_TABLE = "INSERT INTO phone_numbers (numbers) VALUES (?)";
 
     public Boolean handleRequest(S3EventNotification s3EventNotification, Context context) {

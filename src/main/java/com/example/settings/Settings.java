@@ -6,23 +6,14 @@ public class Settings {
     }
 
     private static final String SOURCE_ACCESS_KEY = "SOURCE_ACCESS_KEY";
-
     private static final String SOURCE_SECRET_KEY = "SOURCE_SECRET_KEY";
-
     private static final String DB_INSTANCE_IDENTIFIER = "DB_INSTANCE_IDENTIFIER";
-
     private static final String INSTANCE_CLASS = "INSTANCE_CLASS";
-
     private static final String ENGINE = "ENGINE";
-
     private static final String DB_NAME = "DB_NAME";
-
     private static final String STORAGE_TYPE = "STORAGE_TYPE";
-
     private static final String USER_NAME = "USER_NAME";
-
     private static final String PASSWORD = "PASSWORD";
-
     private static final String RDS_URL = "RDS_URL";
 
     public static String getStorageType() {
