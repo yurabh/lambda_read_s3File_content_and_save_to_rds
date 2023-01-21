@@ -6,7 +6,6 @@ import java.util.Objects;
 
 public class PhoneNumber {
     private final List<Integer> phoneNumbers;
-
     public PhoneNumber() {
         phoneNumbers = new ArrayList<>();
     }
