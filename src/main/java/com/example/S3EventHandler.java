@@ -20,11 +20,9 @@ import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.GetQueueUrlResult;
 import com.example.model.PhoneNumber;
 
-
 import com.example.settings.Settings;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
 
 import java.io.BufferedReader;
 import java.io.IOException;
