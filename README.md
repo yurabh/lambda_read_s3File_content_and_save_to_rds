@@ -1,4 +1,4 @@
-                                         lambda_read_s3File_content_and_save_to_rds
+                                          lambda_read_s3File_content_and_save_to_rds
 1)About the project.
 
 This is a lambda function that is triggered by an event when a file is placed in a bucket S3 from the aws console.
